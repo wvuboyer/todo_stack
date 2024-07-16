@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Todo Stack</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #efefef;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            //height: 100vh;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            width: 50%;
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        textarea {
+            padding: 10px;
+            font-size: 16px;
+            margin-right: 10px;
+            width: 100%;
+            box-sizing: border-box; 
+        }
+
+        button {
+            padding: 10px;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+            margin-top: 20px;
+        }
+
+        li {
+            background: #e2e2e2;
+            margin: 10px 0;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 4px;
+            display: flex;
+            cursor: auto;
+        }
+
+        li .actions {
+            display: flex;
+            gap: 10px;
+            margin-left: auto;
+            order: 3;
+        }
+
+        li.dragging {
+            opacity: 0.5;
+        }
+
+        .complete-btn, .remove-btn {
+            background: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: min-content;
+            align-self: center;
+        }
+
+        .complete-btn {
+            color: green
+        }
+
+        .remove-btn {
+            color: red
+        }
+
+        .complete-btn:hover {
+            color: #259f25;
+        }
+
+        .remove-btn:hover {
+            color: lightcoral;
+        }
+
+        li.done {
+            text-decoration: line-through;
+            background: #d4ffd4;
+        }
+
+        li.hidden {
+            display: none;
+        }
+
+        .handle {
+            cursor: grab;
+            margin-right: 10px;
+            margin-left: 10px;
+            align-self: center;
+        }
+
+        .timestamp {
+            display: flex;
+            gap: 10px;
+            margin-left: auto;
+            align-self: center;
+            order: 3;
+        }
+
+        .note {
+            margin-left: 10px;
+            align-self: center;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Todo Stack</h1>
+        <p>Your data is saved in your browser. Export regularly for backup. You can also save this page for offline access.</p>
+        <label for="todoInput">Todo Item</label>
+        <textarea id="todoInput" placeholder="Enter a new todo" rows="6"></textarea>
+        <button onclick="addTodo()">Add</button>
+        <ul id="todoStack"></ul>
+        <button onclick="exportTodos()">Export to JSON</button>
+        <input type="file" id="fileInput" style="display:none;" accept=".json" onchange="importTodos(event)">
+        <button onclick="document.getElementById('fileInput').click()">Import from JSON</button>
+        <button onclick="toggleVisibility()">Show Completed</button>
+
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTodos();
+        });
+
+        let todoStack = document.getElementById('todoStack');
+        let draggingElement = null;
+        let showCompleted = false;
+
+        function addTodo() {
+            let todoInput = document.getElementById('todoInput');
+            let todoText = todoInput.value.trim();
+            if (todoText !== '') {
+                createTodoElement(todoText, isDone = false, isNew = true);
+                saveTodos();
+                todoInput.value = '';
+            }
+        }
+
+        function createTodoElement(todoText, isDone = false, isNew = false, timestamp = null) {
+            let stackItem = document.createElement('li');
+            let handle = document.createElement('div');
+
+            if (isDone) {
+                stackItem.classList.add('done');
+                stackItem.classList.add('hidden');
+            }
+            
+            handle.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">\n' +
+                '  <path fill-rule="evenodd" d="M11.5 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L11 2.707V14.5a.5.5 0 0 0 .5.5m-7-14a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L4 13.293V1.5a.5.5 0 0 1 .5-.5"/>\n' +
+                '</svg>';
+            handle.className = 'handle';
+            handle.draggable = true;
+            handle.addEventListener('dragstart', handleDragStart);
+            handle.addEventListener('dragend', handleDragEnd);
+
+            let text = document.createElement('span');
+            text.className = 'note';
+            text.style.whiteSpace = 'pre-wrap';
+            text.textContent = todoText;
+            text.addEventListener('click', toggleHidden);
+            
+            stackItem.appendChild(handle);
+            stackItem.appendChild(text);
+
+            if (!isDone) {
+                let actions = document.createElement('div');
+                actions.className = 'actions';
+
+                let completeBtn = document.createElement('button');
+                completeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">\n' +
+                    '  <path d="M3 14.5A1.5 1.5 0 0 1 1.5 13V3A1.5 1.5 0 0 1 3 1.5h8a.5.5 0 0 1 0 1H3a.5.5 0 0 0-.5.5v10a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5V8a.5.5 0 0 1 1 0v5a1.5 1.5 0 0 1-1.5 1.5z"/>\n' +
+                    '  <path d="m8.354 10.354 7-7a.5.5 0 0 0-.708-.708L8 9.293 5.354 6.646a.5.5 0 1 0-.708.708l3 3a.5.5 0 0 0 .708 0"/>\n' +
+                    '</svg>';
+                completeBtn.className = 'complete-btn';
+                completeBtn.addEventListener('click', handleComplete);
+                actions.appendChild(completeBtn);
+
+                let removeBtn = document.createElement('button');
+                removeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">\n' +
+                    '  <path d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5M8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5m3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0"/>\n' +
+                    '</svg>'; // Trashcan icon
+                removeBtn.className = 'remove-btn';
+                removeBtn.addEventListener('click', handleRemove);
+                actions.appendChild(removeBtn);
+
+                stackItem.appendChild(actions);
+
+            } else {
+                let time = document.createElement('span');
+                time.className = 'timestamp';
+                time.textContent = timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString();
+                stackItem.appendChild(time);
+            }
+
+            stackItem.addEventListener('dragover', handleDragOver);
+            stackItem.addEventListener('drop', handleDrop);
+
+            if (isNew) {
+                todoStack.prepend(stackItem)
+            } else {
+                todoStack.appendChild(stackItem);
+            }
+        }
+
+        function handleDragStart(event) {
+            draggingElement = event.target.parentNode;
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/html', '');
+            draggingElement.classList.add('dragging');
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault();
+            let target = event.target.closest('li');
+            if (target && target !== draggingElement && target.nodeName === 'LI') {
+                let bounding = target.getBoundingClientRect();
+                let offset = bounding.y + (bounding.height / 2);
+                if (event.clientY - offset > 0) {
+                    target.style['border-bottom'] = 'solid 4px #000';
+                    target.style['border-top'] = '';
+                } else {
+                    target.style['border-top'] = 'solid 4px #000';
+                    target.style['border-bottom'] = '';
+                }
+            }
+        }
+
+        function handleDrop(event) {
+            event.preventDefault();
+            let target = event.target.closest('li');
+            if (target && target !== draggingElement && target.nodeName === 'LI') {
+                target.style['border-top'] = '';
+                target.style['border-bottom'] = '';
+                let bounding = target.getBoundingClientRect();
+                let offset = bounding.y + (bounding.height / 2);
+                if (event.clientY - offset > 0) {
+                    target.parentNode.insertBefore(draggingElement, target.nextSibling);
+                } else {
+                    target.parentNode.insertBefore(draggingElement, target);
+                }
+                saveTodos();
+            }
+        }
+
+        function handleDragEnd(event) {
+            draggingElement.classList.remove('dragging');
+            let items = document.querySelectorAll('#todoStack li');
+            items.forEach(item => {
+                item.style['border-top'] = '';
+                item.style['border-bottom'] = '';
+            });
+        }
+
+        function toggleHidden(event) {
+            if (event.target.className !== 'complete-btn') {
+                let stackItem = event.target;
+                stackItem.classList.toggle('hidden');
+                saveTodos();
+            }
+        }
+
+        function handleComplete(event) {
+            event.stopPropagation();
+            if (confirm('Are you sure you want to complete this todo item?')) {
+                const button = event.target.closest('button');
+                const todoItem = button.closest('li');
+                const actionDiv = button.closest('div');
+                todoItem.classList.add('done');
+                todoItem.classList.add('hidden');
+                if (actionDiv) {
+                    todoItem.removeChild(actionDiv);
+                }
+                let time = document.createElement('span');
+                time.className = 'timestamp';
+                time.textContent = new Date().toLocaleString();
+                todoItem.appendChild(time);
+                saveTodos();
+                removeOldTodos();
+            }
+        }
+
+        function removeOldTodos() {
+            let items = document.querySelectorAll('#todoStack li.done');
+            let currentDate = new Date();
+            items.forEach(item => {
+                let timestamp = item.querySelector('.timestamp');
+                if (timestamp) {
+                    let todoDate = new Date(timestamp.textContent);
+                    let timeDiff = Math.abs(currentDate - todoDate);
+                    let diffDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
+                    if (diffDays > 30) {
+                        item.remove();
+                    }
+                }
+            });
+            saveTodos();
+        }
+
+        function saveTodos() {
+            let todos = [];
+            let items = document.querySelectorAll('#todoStack li');
+            items.forEach(item => {
+                todos.push({
+                    text: item.querySelector('span').textContent,
+                    done: item.classList.contains('done'),
+                    timestamp: item.querySelector('.timestamp') ? new Date(item.querySelector('.timestamp').textContent).toISOString() : null
+                });
+            });
+            localStorage.setItem('todos', JSON.stringify(todos));
+        }
+
+        function loadTodos() {
+            let todos = JSON.parse(localStorage.getItem('todos')) || [];
+            todos.forEach(todo => {
+                createTodoElement(todo.text, todo.done, false, todo.timestamp);
+            });
+            removeOldTodos();
+        }
+
+        function exportTodos() {
+            let todos = JSON.parse(localStorage.getItem('todos')) || [];
+            let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(todos));
+            let downloadAnchorNode = document.createElement('a');
+            const now = new Date();
+            const timestamp = now.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+            const filename = `todos_${timestamp}.json`;
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", filename);
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        function importTodos(event) {
+            let file = event.target.files[0];
+            let reader = new FileReader();
+            reader.onload = function(event) {
+                let todos = JSON.parse(event.target.result);
+                localStorage.setItem('todos', JSON.stringify(todos));
+                todoStack.innerHTML = '';
+                todos.forEach(todo => {
+                    createTodoElement(todo.text, todo.done, false, todo.timestamp);
+                });
+            };
+            reader.readAsText(file);
+            removeOldTodos();
+        }
+
+        function toggleVisibility() {
+            showCompleted = !showCompleted;
+            let items = document.querySelectorAll('#todoStack li');
+            items.forEach(item => {
+                if (showCompleted) {
+                    if (item.classList.contains('done')) {
+                        item.classList.remove('hidden');
+                    } else {
+                        item.classList.add('hidden');
+                    }
+                } else {
+                    if (item.classList.contains('done')) {
+                        item.classList.add('hidden');
+                    } else {
+                        item.classList.remove('hidden');
+                    }
+                }
+            });
+            document.querySelector('button[onclick="toggleVisibility()"]').textContent = showCompleted ? 'Hide Completed' : 'Show Completed';
+        }
+
+        function handleRemove(event) {
+            event.stopPropagation();
+            if (confirm('Are you sure you want to remove this todo item?')) {
+                const button = event.target.closest('button');
+                const todoItem = button.closest('li');
+                todoItem.remove();
+                saveTodos();
+            }
+        }
+
+
+    </script>
+</body>
+</html>
